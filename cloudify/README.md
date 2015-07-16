@@ -1,4 +1,4 @@
-# Cloudify Bluepring
+# Cloudify Blueprint
 
 ## Introduction
 
