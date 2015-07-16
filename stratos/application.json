@@ -1,0 +1,49 @@
+{  
+   "applicationId":"uccApp",
+   "alias":"uccApp",
+   "multiTenant":false,
+   "components":{  
+      "cartridges":[  
+         {  
+            "type":"nginx",
+            "cartridgeMax":1,
+            "cartridgeMin":1,
+            "subscribableInfo":{  
+               "alias":"uccNginx",
+               "autoscalingPolicy":"autoscaling-policy-1",
+               "deploymentPolicy":"deployment-policy-1",
+               "artifactRepository":{  
+
+               }
+            }
+         },
+         {  
+            "type":"ghost",
+            "cartridgeMax":3,
+            "cartridgeMin":1,
+            "subscribableInfo":{  
+               "alias":"uccGhost",
+               "autoscalingPolicy":"autoscaling-policy-1",
+               "deploymentPolicy":"deployment-policy-1",
+               "artifactRepository":{  
+                  "privateRepo":false,
+                  "repoUrl":"+https://github.com/cha87de/ghost-stratos"
+               }
+            }
+         },
+         {  
+            "type":"postgresql",
+            "cartridgeMax":1,
+            "cartridgeMin":1,
+            "subscribableInfo":{  
+               "alias":"uccPostgres",
+               "autoscalingPolicy":"autoscaling-policy-1",
+               "deploymentPolicy":"deployment-policy-1",
+               "artifactRepository":{  
+
+               }
+            }
+         }
+      ]
+   }
+}

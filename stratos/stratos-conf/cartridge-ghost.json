@@ -1,0 +1,39 @@
+﻿{
+	"type": "ghost",
+	"category": "framework",
+	"provider": "omistack",
+	"host": "omistack-vm130",
+	"displayName": "ghost",
+	"description": "ghost Cartridge",
+	"version": "1",
+	"multiTenant": false,
+	"loadBalancingIPType": "private",
+	"portMapping": [
+		{
+			"protocol": "http",
+			"port": 80,
+			"proxyPort": 80
+		}
+	],
+	"iaasProvider": [
+		{
+			"type": "openstack",
+			"imageId": "regionOne/afabfdfb-3492-43f2-8a07-7ddc18b0feda",
+			"property": [
+				{
+					"name": "instanceType",
+					"value": "regionOne/b3ec98f6-74b7-4e68-b4bb-384dd230a2d6"
+				},
+				{
+					"name": "keyPair",
+					"value": "stratos-key"
+				},
+				{
+					"name": "availabilityZone",
+					"value": "default"
+				}
+			],
+			"networkInterfaces": []
+		}
+	]
+}
