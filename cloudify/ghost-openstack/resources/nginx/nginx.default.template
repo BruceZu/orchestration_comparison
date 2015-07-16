@@ -1,0 +1,14 @@
+upstream backend_hosts {
+{% for id, backend in backends.iteritems() %}
+    server {{ backend.address }}:2368;
+{% endfor %}
+}
+
+server {
+    listen 80;
+    server_name localhost;
+
+    location / {
+        proxy_pass http://backend_hosts;
+    }
+}

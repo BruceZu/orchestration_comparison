@@ -1,0 +1,343 @@
+# Copyright 2015 University of Ulm
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+########################################
+# Ghost Blueprint
+# - nginx as loadbalancer
+# - ghost webapp on nodejs
+# - postgresql as db backend
+########################################
+
+tosca_definitions_version: cloudify_dsl_1_0
+
+imports:
+  - http://www.getcloudify.org/spec/cloudify/3.2/types.yaml
+  - http://www.getcloudify.org/spec/openstack-plugin/1.2/plugin.yaml
+  - http://www.getcloudify.org/spec/diamond-plugin/1.2/plugin.yaml
+  - types/ghost.yaml
+  - types/nginx.yaml
+
+#####################################################################################
+# inputs section allows the user to use same
+# blueprint for creating different deployments, each one
+# with its own parameters.
+# to specify deployment inputs run:
+#   - cfy deployments create -b <blueprint_id> -d <deployment_id> -i inputs.yaml
+#####################################################################################
+inputs:
+
+  image:
+    description: >
+      Image to be used when launching agent VM's
+  flavor:
+    description: >
+      Flavor of the agent VM's
+  agent_user:
+    description: >
+      User for connecting to agent VM's
+node_types:
+
+  ###########################################################
+  # We define a type that inherits openstack's default
+  # server, and adds monitoring capabillities on top of it.
+  ###########################################################
+
+  ghost.nodes.MonitoredServer:
+    derived_from: cloudify.openstack.nodes.Server
+    properties:
+      cloudify_agent:
+        default:
+          user: { get_input: agent_user }
+    openstack_config: {
+    "username": "",
+    "password": "",
+    "tenant_name": "",
+    "auth_url": "",
+    "region": "",
+    "nova_url": "",
+    "neutron_url": ""}
+      server:
+        default:
+          image: { get_input: image }
+          flavor: { get_input: flavor }
+    interfaces:
+
+  ghost.nodes.gwdg:
+    derived_from: cloudify.openstack.nodes.Server
+    properties:
+      cloudify_agent:
+        default:
+          user: { get_input: agent_user }
+      server:
+        default:
+          image: { get_input: image }
+          flavor: { get_input: flavor }
+    interfaces:
+
+      ###########################################################
+      # We are infact telling cloudify to install a diamond
+      # monitoring agent on the server.
+      #
+      # (see https://github.com/BrightcoveOS/Diamond)
+      ###########################################################
+
+      cloudify.interfaces.monitoring_agent:
+          install:
+            implementation: diamond.diamond_agent.tasks.install
+            inputs:
+              diamond_config:
+                default:
+                  interval: 1
+          start: diamond.diamond_agent.tasks.start
+          stop: diamond.diamond_agent.tasks.stop
+          uninstall: diamond.diamond_agent.tasks.uninstall
+
+      ###########################################################
+      # Adding some collectors. These collectors are necessary
+      # for the Cloudify UI to display the deafult metrics.
+      ###########################################################
+
+      cloudify.interfaces.monitoring:
+        start:
+          implementation: diamond.diamond_agent.tasks.add_collectors
+          inputs:
+            collectors_config:
+              default:
+                CPUCollector:
+                  config:
+                    simple: true
+                MemoryCollector: {}
+                LoadAverageCollector: {}
+                DiskUsageCollector:
+                  config:
+                    devices: x?vd[a-z]+[0-9]*$
+                NetworkCollector: {}
+
+node_templates:
+
+  postgre_host:
+    type: ghost.nodes.MonitoredServer
+    relationships:
+
+      ###########################################################
+      # Attaching the postgre security group to the postgre host
+      ###########################################################
+
+      - target: postgre_security_group
+        type: cloudify.openstack.server_connected_to_security_group
+
+  nodejs_host:
+    type: ghost.nodes.MonitoredServer
+
+    ###########################################################
+    # Setting the nodejs_host initial number of instances to 2.
+    # The default values for instances.deploy is 1.
+    ###########################################################
+
+    instances:
+      deploy: 2
+
+    relationships:
+
+      ###########################################################
+      # Attaching the ghost security group to
+      # the ghost host
+      ###########################################################
+
+      - target: ghost_security_group
+        type: cloudify.openstack.server_connected_to_security_group
+
+  nginx_frontend_host:
+    type: ghost.nodes.MonitoredServer
+    relationships:
+
+      ###########################################################
+      # Attaching a floating ip to the nginx frontend host
+      ###########################################################
+
+      - type: cloudify.openstack.server_connected_to_floating_ip
+        target: frontend_floatingip
+
+      ###########################################################
+      # Attaching the nginx frontend security group to
+      # the nginx frontend host
+      ###########################################################
+
+      - type: cloudify.openstack.server_connected_to_security_group
+        target: nginx_frontend_security_group
+
+  postgre:
+    type: ghost.nodes.PostgreSQL
+    relationships:
+      - type: cloudify.relationships.contained_in
+        target: postgre_host
+
+  nodejs:
+    type: ghost.nodes.NodeJSServer
+    relationships:
+      - type: cloudify.relationships.contained_in
+        target: nodejs_host
+
+  ghost:
+    type: ghost.nodes.GhostApplicationModule
+    relationships:
+
+      ################################
+      # Setting the postgre connection
+      ################################
+
+      - type: node_connected_to_postgre
+        target: postgre
+
+      ################################
+      # Setting the nodejs connection
+      ################################
+
+      - type: node_contained_in_nodejs
+        target: nodejs
+
+      ################################
+      # Setting the nginx connection
+      ################################
+
+      - type: app_connected_to_nginx
+        target: nginx
+
+  nginx:
+    type: nginx.nodes.Proxy
+    relationships:
+      - target: nginx_frontend_host
+        type: cloudify.relationships.contained_in
+
+  ###########################################################
+  # A security group to enable access to the nodejs host
+  # using the port of the ghost application.
+  #
+  # This security group will be attached to the nodejs_host
+  ###########################################################
+
+  ghost_security_group:
+    type: cloudify.openstack.nodes.SecurityGroup
+    properties:
+      security_group:
+        name: ghost_security_group
+      rules:
+        - remote_ip_prefix: 0.0.0.0/0
+          port: 2368
+
+
+  ###########################################################
+  # A security group to enable access to the postgre host
+  # using the port of the postgre node.
+  #
+  # We need this so that the ghost application can
+  # comminicate with PostgreSQL DB, since they are running on
+  # different hosts.
+  ###########################################################
+
+  postgre_security_group:
+    type: cloudify.openstack.nodes.SecurityGroup
+    properties:
+      security_group:
+        name: postgre_security_group
+      rules:
+        - remote_ip_prefix: 0.0.0.0/0
+          port: 5432
+
+  ###########################################################
+  # A security group to enable access to the nginx frontend
+  # host.
+  #
+  # This security group will be attached to the
+  # nginx_frontend_host
+  ###########################################################
+
+  nginx_frontend_security_group:
+    type: cloudify.openstack.nodes.SecurityGroup
+    properties:
+      security_group:
+        name: nginx_frontend_security_group
+      rules:
+        - remote_ip_prefix: 0.0.0.0/0
+          port: 80
+
+  ###########################################################
+  # A floating ip to be attached to the nginx frontend host,
+  # since eventually we want to be able to access the application
+  # from any machine, on any network.
+  ###########################################################
+
+  frontend_floatingip:
+    type: cloudify.openstack.nodes.FloatingIP
+
+
+###########################################################
+# This outputs section exposes the application endpoint.
+# You can access it by running:
+#   - cfy deployments -d <deployment_id> outputs
+###########################################################
+
+outputs:
+  endpoint:
+    description: Web application endpoint
+    value:
+      ip_address: { get_attribute: [ frontend_floatingip, floating_ip_address ] }
+      port: 80
+
+policy_types:
+  my_threshold:
+    source: policies/threshold.clj
+    properties:
+      service:
+        description: >
+          service name
+      threshold:
+        description: >
+          threshold
+
+groups:
+  nodejs:
+    # adding the nodejs_host node template that was previously configured
+    members: [nodejs_host]
+    policies:
+      cpu_threshold:
+        # using the 'threshold' policy type
+        type: my_threshold
+        # policy specific configuration
+        properties:
+        # Configure it
+          service: cpu_percent
+          threshold: 35
+
+        # Name of the service we want to shortlist (using regular expressions) and
+        # watch - every Diamond event has the service field set to some value.
+        # In our case, the ExampleCollector sends events with this value set to "example".
+        #service:
+        #  - cpu_percent
+
+        triggers:
+          scale_trigger:
+            # using the 'execute_workflow' policy trigger
+            type: cloudify.policies.triggers.execute_workflow
+            parameters:
+              # configuring this trigger to execute the scale workflow
+              workflow: scale
+              # The heal workflow will get
+              # its parameters from the event that triggered
+              # its execution
+              workflow_parameters:
+                # 'node_id' will be the node instance id
+                # of the node that failed. In our case, it will be
+                # something like 'some_vm_afd34'
+                node_id: { get_property: [SELF, node_id] }

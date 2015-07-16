@@ -1,0 +1,3 @@
+image: 'OPENSTACK IMAGE ID'
+flavor: 'OPENSTACK FLAVOR ID'
+agent_user: 'ubuntu'

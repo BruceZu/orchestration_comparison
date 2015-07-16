@@ -1,0 +1,67 @@
+# Copyright 2015 University of Ulm
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+###########################################################
+# This file containes node type / relationship definitions
+# for installing, configuring and managing an nginx
+# instance.
+###########################################################
+
+node_types:
+
+  nginx.nodes.Proxy:
+    derived_from: cloudify.nodes.ApplicationServer
+    interfaces:
+      cloudify.interfaces.lifecycle:
+        create: scripts/nginx/install-ubuntu.sh
+        configure:
+          implementation: scripts/nginx/nginx.py
+          inputs:
+            invocation:
+              default:
+                function: configure
+        start:
+          implementation: scripts/nginx/nginx.py
+          inputs:
+            invocation:
+              default:
+                function: start
+        stop:
+          implementation: scripts/nginx/nginx.py
+          inputs:
+            invocation:
+              default:
+                function: stop
+
+relationships:
+  app_connected_to_nginx:
+    derived_from: cloudify.relationships.connected_to
+    target_interfaces:
+      cloudify.interfaces.relationship_lifecycle:
+        establish:
+          implementation: scripts/nginx/nginx.py
+          inputs:
+            invocation:
+              default:
+                function: add_backend
+                kwargs:
+                  port: 80 # currently ignored by script # { get_property: [ TARGET, backend_app_port ] }
+                  maxconn: 1000 # currently ignored by script # { get_property: [ TARGET, backend_max_conn ] }
+                  # backend_address:  (optional, defaults to host_ip)
+        unlink:
+          implementation: scripts/nginx/nginx.py
+          inputs:
+            invocation:
+              default:
+                function: remove_backend
