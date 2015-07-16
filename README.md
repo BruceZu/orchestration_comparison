@@ -1,7 +1,7 @@
 # Comparison of Cloud Orchestration
 
 ## Overview
-This project contains application description for the following tools:
+This project contains application descriptions for the following tools:
 Apache Brooklyn, Apache Stratos and Cloudify.
 
 The purpose of this is to compare the platforms. A three-tier application
@@ -17,6 +17,9 @@ For each tools we provide one folder with two subfolders:
 
 
 ----
+
+Copyright (c) 2015 University of Ulm. All rights reserved.
+
 Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  
 See the [NOTICE](NOTICE) file distributed with this work for additional information
 regarding copyright ownership and the [incubation disclaimer](DISCLAIMER) file regarding project status,
