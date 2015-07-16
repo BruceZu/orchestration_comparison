@@ -1,0 +1,90 @@
+name: ghostapp-w-policy-and-sensor
+location: 
+  named:Omistack
+services:
+
+- type: brooklyn.entity.database.postgresql.PostgreSqlNode
+  id: sql-server
+  provisioning.properties:
+    autoAssignFloatingIp: true
+    privateKeyFile: /home/ubuntu/omistack/id_brooklyn_2
+  brooklyn.config:
+    creationScriptUrl:
+      https://www.dropbox.com/s/c19ccb5a3502t4b/pg_installscript.sql?dl=1
+
+- type: brooklyn.entity.webapp.ControlledDynamicWebAppCluster
+  id: dynamic-cluster
+  initialSize: 1
+  provisioning.properties:
+    autoAssignFloatingIp: true
+    templateOptions:
+        availabilityZone: default
+    privateKeyFile: /home/ubuntu/omistack/id_brooklyn_2
+  env:
+    DB_HOSTNAME: $brooklyn:component("sql-server").attributeWhenReady("host.name")
+  memberSpec:
+    $brooklyn:entitySpec:
+      - type: brooklyn.entity.webapp.nodejs.NodeJsWebAppService
+        name: Ghost Server
+        id: ghost-server
+        env:
+          DB_HOSTNAME: $brooklyn:component("sql-server").attributeWhenReady("host.name")
+          GHOST_HOSTNAME: $brooklyn:component("ghost-server").attributeWhenReady("host.name")
+        brooklyn.config:
+          appFileName: index.js
+          appName: ""
+          http.port: 2368
+          runDir: /var/www/ghost
+          preInstallCommand: |
+            sudo mkdir -p -m 777 /var/www/ghost
+            sudo rm /etc/hosts
+            echo 127.0.0.1 localhost.localdomain localhost `hostname` monitoring_workaround | sudo tee /etc/hosts
+          nodePackages: [pg]
+          preLaunchCommand: |
+            cd /var/www/ghost
+            sudo npm install --development
+            sudo npm install pg
+            sudo cp config.example.js config.js
+            sudo sed -i 's/127.0.0.1/0.0.0.0/g' config.js
+            sudo sed -i 's*filename: path.join(__dirname, '\''/content/data/ghost.db'\'')*host: '\'''"$DB_HOSTNAME"''\'', user: '\''tom'\'', password: '\''tom'\'', database: '\''jerry'\'', charset: '\''utf8'\''*g' config.js
+            sudo sed -i 's*filename: path.join(__dirname, '\''/content/data/ghost-dev.db'\'')*host: '\'''"$DB_HOSTNAME"''\'', user: '\''tom'\'', password: '\''tom'\'', database: '\''jerry'\'', charset: '\''utf8'\''*g' config.js
+            sudo sed -i 's/sqlite3/postgresql/g' config.js
+            sudo sed -i 's/localhost:2368/'"$GHOST_HOSTNAME"':'"$PORT"'/g' config.js
+            sudo sed -i '1s*^*var monitor = require('\''node-monitor'\'');\n*' index.js
+            sudo sed -i 's*ghostServer.start(parentApp);*ghostServer.start(parentApp); monitor.Monitor(ghostServer.httpServer);*g' index.js
+            sudo npm install node-monitor
+            sudo sed -i 's*ret += " | " + *ret =*g' node_modules/node-monitor/node_monitor_plugin/src/monitor.js
+            sudo sed -i 's*cleanAllMonitorResults() {*cleanAllMonitorResults() {return;*g' node_modules/node-monitor/node_monitor_plugin/src/monitor.js
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install  -q -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" jq curl
+          appCommandLine: |
+            sleep 1 &
+            sudo npm install forever -g
+            sudo forever --pidFile /var/www/ghost/pid.txt start index.js
+            exit 0
+          archiveUrl: https://ghost.org/zip/ghost-latest.zip
+        provisioning.properties:
+          autoAssignFloatingIp: true
+          privateKeyFile: /home/ubuntu/omistack/id_brooklyn_2
+          inboundPorts: [2368, 22, 80, 10010]
+        brooklyn.initializers:
+        - type: brooklyn.entity.software.http.HttpRequestSensor
+          brooklyn.config:
+            name: webapp.reqs.total
+            uri: "http://monitoring_workaround:10010/node_monitor?action=getdata&access_code=monitis"
+            jsonPath: "$.platform.total"
+            period: 10s
+            targetType: Integer
+  controlleddynamicwebappcluster.controllerSpec:
+    $brooklyn:entitySpec:
+      type: brooklyn.entity.proxy.nginx.NginxController
+      provisioning.properties:
+        autoAssignFloatingIp: true
+        privateKeyFile: /home/ubuntu/omistack/id_brooklyn_2
+  brooklyn.policies:
+  - policyType: brooklyn.policy.autoscaling.AutoScalerPolicy
+    brooklyn.config:
+      metric: $brooklyn:sensor("brooklyn.entity.webapp.DynamicWebAppCluster", "webapp.reqs.perSec.windowed")
+      metricLowerBound: 1
+      metricUpperBound: 5
+      minPoolSize: 1
+      maxPoolSize: 2
