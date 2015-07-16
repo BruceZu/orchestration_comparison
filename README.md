@@ -11,8 +11,8 @@ NGINX (load-balancer), Ghost (application tier), PostgreSQL (database tier)
 ## Contents
 
 * [Brooklyn](brooklyn)
-* [Stratos](cloudify)
-* [Cloudify](stratos)
+* [Stratos](stratos)
+* [Cloudify](cloudify)
 
 
 ## License
