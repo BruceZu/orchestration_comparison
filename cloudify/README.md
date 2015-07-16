@@ -15,5 +15,5 @@ This recipe is available [here](https://github.com/dbaur/cloudify-manager-bluepr
 ## Limitations
 
 * built only for Ubuntu, relies on apt-get
-* the autoscaling policies is not working
+* the autoscaling policy is not working
 
